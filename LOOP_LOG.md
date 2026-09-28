@@ -103,3 +103,40 @@ that one 12-line patch, or accept the deviation (userspace can test
 
 Next: native-PKGBUILD validation (clean ALARM chroot, qemu-user,
 unprivileged) running; then docs and final report.
+
+### Iteration 1 — completion (2026-09-28 16:58)
+
+- Native validation (`harness/native-validate.sh`): **PASS**. Unmodified
+  PKGBUILD from `git archive HEAD`, pristine ALARM rootfs (qemu-user,
+  unprivileged user namespace), base-devel + `.SRCINFO` makedepends only,
+  `makepkg` as a normal user with dep + PGP checks: built in 5315 s
+  (`work/logs/native-20260928-151935.log`). So the makedepends list is
+  sufficient.
+- Package test with the **natively built** packages (kernel + headers):
+  **PASS** (pacman -U, reboot from disk, RT QA all pass, 1 known deviation).
+- Docs: `README.md` written (how it works, usage, config provenance,
+  RT-removed features, lost ALARM patches, status aarch64/armv7h,
+  troubleshooting, maintenance).
+
+## FINAL REPORT — loop stopped after 1 iteration
+
+Status: **all green**, with one item that needs a human decision.
+
+| Check | Result |
+|---|---|
+| Cross build (dev) | PASS, 572 s |
+| Smoke boot (direct -kernel) | PASS, `SMP PREEMPT_RT`, no splats |
+| pacman -U + reboot from disk (UEFI/systemd-boot) | PASS (cross and native packages) |
+| `uname -v` PREEMPT_RT, config RT=y / DYNAMIC unset | PASS |
+| chrt -f 99, SCHED_FIFO/RR semantics, cyclictest, pi_stress | PASS (functional only — TCG, no latency claims) |
+| `/sys/kernel/realtime` | **DEVIATION**: not in mainline (see iteration 1) |
+| Native makepkg, unmodified PKGBUILD, clean chroot | PASS, 88 min under qemu-user |
+
+Human decisions needed:
+1. `/sys/kernel/realtime`: accept the deviation (current state, documented in
+   README) or carry the 12-line `sysfs__Add__sys_kernel_realtime_entry.patch`
+   (would violate "no out-of-tree RT patches").
+2. Review & merge `wip/loop` → `main`.
+
+Not done / out of scope: real-hardware boot and latency benchmarks; armv7h
+(postponed, documented); RPi vendor kernel (separate phase).
