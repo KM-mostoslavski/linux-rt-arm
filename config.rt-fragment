@@ -1,0 +1,28 @@
+# linux-rt-arm: changes applied on top of ALARM linux-aarch64's config.
+# Consumed by tools/genconfig.sh (scripts/config + olddefconfig).
+# Every line is justified in README.md -> "Config provenance".
+
+# Hard realtime: mainline PREEMPT_RT, full preemption model, no boot-time
+# switchable preemption.
+CONFIG_PREEMPT=y
+CONFIG_PREEMPT_RT=y
+# CONFIG_PREEMPT_LAZY is not set
+# CONFIG_PREEMPT_DYNAMIC is not set
+
+# Debug overhead on every preempt_count change; not for a RT production kernel.
+# CONFIG_DEBUG_PREEMPT is not set
+
+# Tickless isolated CPUs (dormant unless nohz_full= is given) + RCU offload.
+CONFIG_NO_HZ_FULL=y
+CONFIG_RCU_EXPERT=y
+CONFIG_RCU_NOCB_CPU=y
+CONFIG_RCU_BOOST=y
+
+# Latency diagnosis on real hardware (rtla osnoise/timerlat/hwlat, wakeup tracers).
+CONFIG_OSNOISE_TRACER=y
+CONFIG_TIMERLAT_TRACER=y
+CONFIG_HWLAT_TRACER=y
+CONFIG_SCHED_TRACER=y
+
+# Kernel release is <ver>-<pkgrel>-rt-arm from localversion files only.
+CONFIG_LOCALVERSION=""
