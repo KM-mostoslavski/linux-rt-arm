@@ -57,3 +57,49 @@ Proposed plan (not yet implemented; the human saw it and did not object):
   in root's authorized_keys. One provisioning boot: pacman-key init,
   base-devel, git, numactl (for rt-tests). Then never boot base again.
 - QEMU speed: `-cpu max,pauth-impdef=on` (cheap pointer-auth emulation).
+
+## Iteration 1 — 2026-09-28 (unattended loop)
+
+Changes:
+- `PKGBUILD` (linux-rt-arm 7.2.8-1), based on ALARM linux-aarch64: full
+  upstream tarball + PGP (keys/pgp), no RT/board patches, chromebook
+  subpackage dropped, ships `/boot/Image{,.gz}`, `/boot/dtbs`,
+  `initramfs-linux.img` (drop-in for linux-aarch64, conflicts with it).
+  `prepare()` hard-fails unless `PREEMPT_RT=y` and `PREEMPT_DYNAMIC` unset.
+- `config` = ALARM config + `config.rt-fragment` via `tools/genconfig.sh`
+  (olddefconfig on 7.2.8). Fallout recorded in `docs/config-rt-diff.txt`:
+  RT (Kconfig `!PREEMPT_RT`) removes legacy xtables (iptables-legacy,
+  ebtables/arptables legacy), LEDS_TRIGGER_CPU, IR_GPIO_TX.
+- Harness (`harness/`): base image built fully unprivileged (user
+  namespace + qemu-user chroot provisioning, mke2fs -d, mtools, sfdisk) —
+  faster than provisioning under TCG and never boots the base.
+  rt-tests is not packaged in ALARM → built from git in the base image.
+- `qa/rt-qa.sh`: in-guest functional RT checks.
+
+Review (subagent, CLAUDE.md as SOW): PASS, no blockers. Applied: ship
+Image.gz, provides linux/linux-headers; mkbase: mount /sys, strict
+unmount, systemd-boot presence check, shared 9p tag var. Doc items
+(regressions list, lost ALARM patches, no fallback initramfs) → docs stage.
+
+Results (logs under `work/logs/`, `work/runs/`):
+- Cross build: OK, 572 s cold ccache (`work/logs/cross-build-20260928-145538.log`).
+- Smoke boot (direct -kernel): PASS, `#1 SMP PREEMPT_RT`, no splats
+  (`work/runs/smoke-20260928-150742`).
+- Package test (UEFI + systemd-boot, pacman -U replacing linux-aarch64,
+  initramfs regenerated, reboot from disk): PASS
+  (`work/runs/pkgtest-20260928-151431`).
+- RT QA: ALL PASS with **1 known deviation** — see below. cyclictest ran to
+  completion (functional only; TCG numbers are meaningless).
+
+**SOW conflict — needs human decision:** CLAUDE.md requires
+`/sys/kernel/realtime` to exist and read 1, and also forbids out-of-tree RT
+patches. Mainline 7.2.8 has no `/sys/kernel/realtime`; it is added only by
+`sysfs__Add__sys_kernel_realtime_entry.patch` (Clark Williams) in the
+out-of-tree queue `patches-7.2-rt5` (verified by downloading the queue and
+grepping `kernel/ksysfs.c` in mainline). Decision taken: do NOT patch;
+QA reports it as a labelled DEVIATION. The option for the human: carry
+that one 12-line patch, or accept the deviation (userspace can test
+`uname -v`/`/proc/config.gz` instead).
+
+Next: native-PKGBUILD validation (clean ALARM chroot, qemu-user,
+unprivileged) running; then docs and final report.
