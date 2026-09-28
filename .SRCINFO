@@ -34,6 +34,7 @@ pkgname = linux-rt-arm
 	optdepends = linux-firmware: firmware images needed for some devices
 	optdepends = wireless-regdb: to set the correct wireless channels of your country
 	optdepends = rt-tests: cyclictest and other realtime test tools
+	provides = linux=7.2.8
 	provides = KSMBD-MODULE
 	provides = WIREGUARD-MODULE
 	conflicts = linux-aarch64
@@ -42,3 +43,6 @@ pkgname = linux-rt-arm
 pkgname = linux-rt-arm-headers
 	pkgdesc = Headers and scripts for building modules for the Linux kernel - AArch64 multi-platform, PREEMPT_RT
 	depends = linux-rt-arm=7.2.8-1
+	provides = linux-headers=7.2.8
+	conflicts = linux-aarch64-headers
+	conflicts = linux-headers

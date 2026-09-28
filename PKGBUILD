@@ -58,7 +58,7 @@ prepare() {
 build() {
   cd $_srcname
   unset LDFLAGS
-  make Image modules
+  make Image Image.gz modules
   # Device tree blobs with symbols, so U-Boot can apply overlays
   make DTC_FLAGS="-@" dtbs
 }
@@ -71,8 +71,8 @@ _package() {
     'wireless-regdb: to set the correct wireless channels of your country'
     'rt-tests: cyclictest and other realtime test tools'
   )
-  provides=("KSMBD-MODULE" "WIREGUARD-MODULE")
-  # Same /boot/Image, /boot/dtbs and initramfs-linux.img as linux-aarch64,
+  provides=("linux=${pkgver}" "KSMBD-MODULE" "WIREGUARD-MODULE")
+  # Same /boot/Image{,.gz}, /boot/dtbs and initramfs-linux.img as linux-aarch64,
   # so existing board boot setups keep working unchanged.
   conflicts=('linux-aarch64' 'linux')
   install=${pkgbase}.install
@@ -82,7 +82,7 @@ _package() {
   local modulesdir="$pkgdir/usr/lib/modules/$kernver"
 
   echo "Installing boot image and dtbs..."
-  install -Dm644 arch/arm64/boot/Image -t "$pkgdir/boot"
+  install -Dm644 arch/arm64/boot/Image{,.gz} -t "$pkgdir/boot"
   make INSTALL_DTBS_PATH="$pkgdir/boot/dtbs" dtbs_install
 
   echo "Installing modules..."
@@ -105,6 +105,8 @@ _package() {
 _package-headers() {
   pkgdesc="Headers and scripts for building modules for the Linux kernel - ${_desc}"
   depends=("$pkgbase=$pkgver-$pkgrel")
+  provides=("linux-headers=${pkgver}")
+  conflicts=('linux-aarch64-headers' 'linux-headers')
 
   cd $_srcname
   local builddir="$pkgdir/usr/lib/modules/$(<version)/build"
