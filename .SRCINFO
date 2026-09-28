@@ -1,0 +1,44 @@
+pkgbase = linux-rt-arm
+	pkgver = 7.2.8
+	pkgrel = 1
+	url = https://github.com/KM-mostoslavski/linux-rt-arm
+	arch = aarch64
+	license = GPL-2.0-only
+	makedepends = bc
+	makedepends = kmod
+	makedepends = libelf
+	makedepends = openssl
+	makedepends = perl
+	makedepends = python
+	makedepends = tar
+	makedepends = xz
+	options = !strip
+	options = !debug
+	source = https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.2.8.tar.xz
+	source = https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.2.8.tar.sign
+	source = config
+	source = linux.preset
+	validpgpkeys = ABAF11C65A2970B130ABE3C479BE3E4300411886
+	validpgpkeys = 647F28654894E3BD457199BE38DBBDC86092693E
+	sha256sums = 12e8d5a973d1ad7c5a5c69882e4022b131ed715db7003fdcd760ddf8c3e51941
+	sha256sums = SKIP
+	sha256sums = d259b7fdaa9c3e84ea26324bcb12bd0fa90804114ccde6e75c84e26e784190a0
+	sha256sums = 73fdca55e375b3f44831b010242a0c28dd389d8085c06abb4b5d75b2ed4c2372
+
+pkgname = linux-rt-arm
+	pkgdesc = The Linux Kernel and modules - AArch64 multi-platform, PREEMPT_RT
+	install = linux-rt-arm.install
+	depends = coreutils
+	depends = kmod
+	depends = mkinitcpio>=0.7
+	optdepends = linux-firmware: firmware images needed for some devices
+	optdepends = wireless-regdb: to set the correct wireless channels of your country
+	optdepends = rt-tests: cyclictest and other realtime test tools
+	provides = KSMBD-MODULE
+	provides = WIREGUARD-MODULE
+	conflicts = linux-aarch64
+	conflicts = linux
+
+pkgname = linux-rt-arm-headers
+	pkgdesc = Headers and scripts for building modules for the Linux kernel - AArch64 multi-platform, PREEMPT_RT
+	depends = linux-rt-arm=7.2.8-1
