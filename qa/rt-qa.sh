@@ -20,17 +20,29 @@ echo "uname -v: $(uname -v)"
 check "uname -v contains PREEMPT_RT" grep -q 'PREEMPT_RT' <<<"$(uname -v)"
 
 # 2. running config
-cfg=$(zcat /proc/config.gz 2>/dev/null)
-check "/proc/config.gz readable" test -n "$cfg"
-check "CONFIG_PREEMPT_RT=y" grep -qx 'CONFIG_PREEMPT_RT=y' <<<"$cfg"
-check "CONFIG_PREEMPT_DYNAMIC not set" bash -c '! grep -q "^CONFIG_PREEMPT_DYNAMIC=" <<<"$1"' _ "$cfg"
+cfg=/tmp/running-config
+zcat /proc/config.gz > "$cfg" 2>/dev/null
+check "/proc/config.gz readable" test -s "$cfg"
+check "CONFIG_PREEMPT_RT=y" grep -qx 'CONFIG_PREEMPT_RT=y' "$cfg"
+check "CONFIG_PREEMPT_DYNAMIC not set" bash -c '! grep -q "^CONFIG_PREEMPT_DYNAMIC=" "$1"' _ "$cfg"
 # PREEMPT_DYNAMIC off also means no preempt= switch at runtime
 check "no /sys/kernel/debug/sched/preempt switch" bash -c '
   mountpoint -q /sys/kernel/debug || mount -t debugfs none /sys/kernel/debug 2>/dev/null
   [[ ! -e /sys/kernel/debug/sched/preempt ]]'
 
 # 3. /sys/kernel/realtime
-check "/sys/kernel/realtime reads 1" test "$(cat /sys/kernel/realtime 2>/dev/null)" = 1
+# This file is NOT in mainline Linux: it is added only by the out-of-tree RT
+# patch queue (patches-7.2-rt5: sysfs__Add__sys_kernel_realtime_entry.patch,
+# Clark Williams). linux-rt-arm deliberately applies no out-of-tree RT
+# patches, so on this kernel it is expected to be absent. If it exists (a
+# patched kernel), it must read 1.
+deviations=0
+if [[ -e /sys/kernel/realtime ]]; then
+  check "/sys/kernel/realtime reads 1" test "$(cat /sys/kernel/realtime)" = 1
+else
+  printf 'DEVIATION  /sys/kernel/realtime absent (mainline has no such file; only the out-of-tree RT patch adds it)\n'
+  deviations=$((deviations+1))
+fi
 
 # 4. RT hallmarks: forced IRQ threading, ktimers thread
 check "threaded IRQ handlers present (irq/* kthreads)" bash -c 'ps -eo comm= | grep -q "^irq/"'
@@ -110,5 +122,5 @@ fi
 check "no BUG/sleeping-in-atomic splats in dmesg" bash -c '
   ! dmesg | grep -E "BUG: (sleeping function|scheduling while atomic|spinlock)|Oops|Kernel panic"'
 
-echo "== RESULT: $([[ $fails -eq 0 ]] && echo ALL PASS || echo "$fails FAILED") =="
+echo "== RESULT: $([[ $fails -eq 0 ]] && echo ALL PASS || echo "$fails FAILED"), $deviations known deviation(s) =="
 exit $(( fails > 0 ))
