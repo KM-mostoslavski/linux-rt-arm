@@ -1,0 +1,26 @@
+# kernel sources / build trees / packages
+/src/
+/pkg/
+/work/
+/build/
+*.tar
+*.tar.*
+!*.tar.*.sig
+*.pkg.tar.*
+*.sign
+
+# VM images and bulky run output
+*.qcow2
+*.img
+*.raw
+*.fd
+/vm/
+/runs/
+/logs/raw/
+
+# caches
+/.ccache/
+/ccache/
+
+# local statement of work for Claude (not published)
+/CLAUDE.md
