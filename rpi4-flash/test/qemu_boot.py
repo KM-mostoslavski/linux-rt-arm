@@ -7,11 +7,11 @@ part by loading a kernel image and a DTB itself. The test runs in two stages:
  1. aarch64 only - U-Boot: QEMU loads the image's kernel8.img (U-Boot). It must
     find the SD card, run the image's boot.scr and load Image, the DTB and the
     initramfs without overlap, up to "Starting kernel ...".
-    The kernel's console is then tty0 (boot.txt lists it last), invisible
-    here, so this stage stops at the hand-off.
+    The kernel log shows on ttyS1 once its driver loads; the stage ends when
+    the kernel has mounted root through the PARTUUID U-Boot computed.
  2. Linux: QEMU loads the image's own kernel, initramfs and DTB directly, with
-    the kernel command line of the image (boot.txt bootargs / cmdline.txt)
-    plus a PL011 console. systemd then mounts / and /boot, swap, etc. from the
+    the kernel command line of the image (boot.txt bootargs / cmdline.txt),
+    its console= arguments replaced by a PL011 console. systemd then mounts / and /boot, swap, etc. from the
     image's /etc/fstab: the part the wiki's sed breaks. We log in on the serial
     console and run checks.
 
@@ -25,6 +25,7 @@ import os, re, select, socket, subprocess, sys, tempfile, time
 img, bootdir, log_path = sys.argv[1:4]
 arch = sys.argv[4] if len(sys.argv) > 4 else "aarch64"
 log = open(log_path, "wb")
+sys.stdout.reconfigure(line_buffering=True)
 
 
 class VM:
@@ -71,8 +72,14 @@ class VM:
         raise TimeoutError(f"no {until!r} after {time.time()-self.start:.0f}s")
 
     def send(self, c, s):
+        c.settimeout(30)  # a guest that stops reading must not hang us
         for ch in s.encode():  # type slowly: the emulated UART has no flow control
             c.send(bytes([ch])); time.sleep(0.01)
+
+    def run_line(self, c, line, t=60):
+        """Type one shell line and wait for its echo before the next one."""
+        self.send(c, line + "\n")
+        self.pump(re.escape(line[-12:].encode()), t)
 
     def stop(self):
         if self.proc.poll() is None:
@@ -98,8 +105,8 @@ def stage_uboot():
         vm.pump(rb"EXT4-fs \(mmcblk\dp2\): mounted filesystem", 420,
                 fail=rb"Kernel panic[^\n]*|Internal error[^\n]*|Timed out waiting for device[^\n]*")
         print(f"PASS  kernel booted by U-Boot mounted root by PARTUUID ({time.time()-vm.start:.0f}s)")
-        # Past this point QEMU's SDHCI misbehaves after U-Boot's hand-off
-        # (RCU stalls, SD I/O errors); the same image is clean in stage 2.
+        # Past this point the image's console=ttyS1 makes QEMU's SDHCI time
+        # out (RCU stalls, SD I/O errors), so userland is checked in stage 2.
     finally:
         vm.stop()
 
@@ -117,38 +124,35 @@ def stage_linux():
         kernel = next(os.path.join(bootdir, k) for k in ("kernel7l.img", "kernel7.img")
                       if os.path.exists(os.path.join(bootdir, k)))
         dtb = os.path.join(bootdir, "bcm2711-rpi-4-b.dtb")
-    args = " ".join(args.split()) + " console=ttyAMA0,115200"
+    # Keep the image's arguments but its consoles: under QEMU the mini-UART
+    # console (ttyS1) starves the SDHCI of interrupts ("mmc0: Timeout waiting
+    # for hardware interrupt", then ext4 I/O errors), and with tty0 around
+    # systemd starts no serial getty. A lone PL011 console avoids both.
+    args = " ".join(a for a in args.split() if not a.startswith("console="))
+    # The PL011 is ttyAMA0 for mainline, ttyAMA1 for the downstream armv7
+    # kernel (its DT aliases serial1 = PL011). systemd's getty generator did
+    # not pick it up by itself here: ask for it.
+    tty = "ttyAMA1" if arch == "armv7" else "ttyAMA0"
+    args += f" console={tty},115200 systemd.wants=serial-getty@{tty}.service"
     print(f"      kernel command line: {args}")
     extra = ["-initrd", os.path.join(bootdir, "initramfs-linux.img"), "-append", args]
     if arch == "armv7":
-        extra += ["-cpu", "cortex-a72"]
+        extra += ["-cpu", "cortex-a72,aarch64=off"]  # AArch32 kernel
     vm = VM(kernel, dtb, extra, "2 (Linux)")
     try:
         con = vm.pump(rb"login: $", 900,
                       fail=rb"Emergency Mode|emergency mode|Kernel panic[^\n]*|Give root password")
         print(f"PASS  login prompt ({time.time()-vm.start:.0f}s)")
         vm.send(con, "root\n"); vm.pump(rb"Password: ", 60)
-        vm.send(con, "root\n"); vm.pump(rb"# $", 120)
-        checks = r"""
-set +e; f=0; ck() { if eval "$2" >/dev/null 2>&1; then echo "QA PASS  $1"; else echo "QA FAIL  $1"; f=1; fi; }
-echo "QA kernel: $(uname -rv)"; echo "QA /boot: $(findmnt -no SOURCE,FSTYPE /boot)"
-echo "QA swap: $(swapon --noheadings --show=NAME,SIZE | tr '\n' ' ')"; echo "QA fstab: $(grep -v '^#' /etc/fstab | grep . | tr -s ' ' | tr '\n' ';')"
-ck "/boot mounted (vfat)" 'findmnt -no FSTYPE /boot | grep -qx vfat'
-ck "/boot holds the initramfs" 'test -s /boot/initramfs-linux.img'
-ck "root mounted rw" 'findmnt -no OPTIONS / | grep -q "^rw"'
-ck "fstab uses no /dev/mmcblk" '! grep -q "^/dev/mmcblk" /etc/fstab'
-ck "swap matches fstab" 'test "$(grep -c "\sswap\s" /etc/fstab)" = "$(swapon --noheadings | wc -l)"'
-ck "pacman keyring initialised" 'test -s /etc/pacman.d/gnupg/pubring.gpg'
-ck "no failed units" 'test -z "$(systemctl --failed --no-legend --plain)"'
-systemctl --failed --no-legend --plain | sed 's/^/QA failed unit: /'
-echo "QA_RESULT=$f"
-"""
-        for line in checks.strip().splitlines():
-            vm.send(con, line + "\n"); time.sleep(0.2)
+        # the shell prompt is followed by OSC 3008 escapes (systemd >= 258)
+        vm.send(con, "root\n"); vm.pump(rb"\]# ", 120)
+        # the checks live in the test image (e2e.sh): long typed lines get lost
+        vm.run_line(con, "sh /root/rpi4-flash-qa.sh")
         vm.pump(rb"\nQA_RESULT=\d", 300)
         time.sleep(1)
         out = open(log_path, "rb").read().decode(errors="replace").replace("\r", "")
         out = out[out.rfind("##### stage 2"):]
+        out = re.sub(r"\x1b\][^\x1b]*\x1b\\|\x1b\[[0-9;?]*[a-zA-Z]", "", out)  # OSC/CSI
         for l in out.splitlines():
             if re.match(r"QA (PASS|FAIL|kernel|/boot|swap|fstab|failed)", l):
                 print("   " + l[3:])
@@ -165,7 +169,7 @@ echo "QA_RESULT=$f"
 
 rc = 1
 try:
-    if arch == "aarch64":
+    if arch == "aarch64" and not os.environ.get("SKIP_UBOOT"):
         stage_uboot()
     rc = 0 if stage_linux() else 1
 except Exception as e:

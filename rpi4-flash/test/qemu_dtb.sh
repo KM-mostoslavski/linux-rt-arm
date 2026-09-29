@@ -41,6 +41,14 @@ walk() {
 }
 walk /
 
+# The PL011 (ttyAMA0) is the Bluetooth UART on a real Pi 4: its bluetooth
+# child makes it a serdev controller, so userspace never gets /dev/ttyAMA0
+# (systemd: "Timed out waiting for device /dev/ttyAMA0"). The test logs in
+# on it, so drop the child.
+if fdtget "${dtb}" /soc/serial@7e201000/bluetooth compatible >/dev/null 2>&1; then
+  fdtput --remove "${dtb}" /soc/serial@7e201000/bluetooth
+fi
+
 sdhci=/soc/mmc@7e300000
 if fdtget "${dtb}" "${sdhci}" compatible >/dev/null 2>&1; then
   for prop in non-removable mmc-pwrseq; do

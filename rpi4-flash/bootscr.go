@@ -37,9 +37,38 @@ func patchBootTxt(txt string) (string, bool) {
 	return txt[:i] + loadAddrBlock + "\n" + txt[i:], true
 }
 
+const armv7Marker = "# rpi4-flash: 32-bit kernel"
+
+// armv7ConfigTxt makes config.txt name the 32-bit kernel explicitly.
+// Current Pi 4 firmware defaults to arm_64bit=1 and kernel8.img, and only
+// picks kernel7l.img when arm_64bit=0 (raspberrypi.com config.txt docs); the
+// armv7 tarball sets neither and ships kernel7.img.
+func armv7ConfigTxt(cfg, kernel string) (string, bool) {
+	if strings.Contains(cfg, armv7Marker) {
+		return cfg, false
+	}
+	return strings.TrimRight(cfg, "\n") + "\n\n" + armv7Marker +
+		" (the Pi 4 firmware defaults to 64-bit kernel8.img)\n[all]\narm_64bit=0\nkernel=" + kernel + "\n", true
+}
+
 func (f *flasher) fixBootScript() error {
 	if f.cfg.Arch != "aarch64" {
-		return nil // armv7 is booted by the firmware directly, no U-Boot
+		// armv7: no U-Boot, the firmware boots the kernel from config.txt.
+		dir := filepath.Join(f.root, "boot")
+		kernel := "kernel7l.img"
+		if _, err := os.Stat(filepath.Join(dir, kernel)); err != nil {
+			kernel = "kernel7.img"
+		}
+		path := filepath.Join(dir, "config.txt")
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if out, changed := armv7ConfigTxt(string(b), kernel); changed {
+			f.r.info("config.txt: arm_64bit=0, kernel=%s", kernel)
+			return os.WriteFile(path, []byte(out), 0o644)
+		}
+		return nil
 	}
 	dir := filepath.Join(f.root, "boot")
 	txtPath := filepath.Join(dir, "boot.txt")

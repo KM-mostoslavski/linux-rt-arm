@@ -35,3 +35,14 @@ func TestPatchBootTxt(t *testing.T) {
 		t.Fatal("patched an unknown layout")
 	}
 }
+
+func TestArmv7ConfigTxt(t *testing.T) {
+	in := "initramfs initramfs-linux.img followkernel\n[cm5]\ndtoverlay=dwc2,dr_mode=host\n[all]\n"
+	out, changed := armv7ConfigTxt(in, "kernel7.img")
+	if !changed || !strings.HasSuffix(out, "[all]\narm_64bit=0\nkernel=kernel7.img\n") {
+		t.Fatalf("got:\n%s", out)
+	}
+	if again, changed := armv7ConfigTxt(out, "kernel7.img"); changed || again != out {
+		t.Fatal("not idempotent")
+	}
+}

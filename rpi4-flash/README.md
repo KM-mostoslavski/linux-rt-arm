@@ -79,6 +79,15 @@ The fstab failure was reproduced in QEMU: the same image with the wiki's line
   into the Pi's initramfs (133 MiB instead of 23). The initramfs is rebuilt with
   `-S autodetect,kms` (host-independent); the first kernel update on the Pi regenerates it
   with real autodetection.
+- **armv7 on current Pi 4 firmware.** The firmware defaults the Pi 4 to `arm_64bit=1` and
+  `kernel8.img`, and only uses the 32-bit `kernel7l.img` with `arm_64bit=0`
+  ([config.txt docs](https://www.raspberrypi.com/documentation/computers/config_txt.html)).
+  The armv7 tarball sets neither and ships `kernel7.img`, i.e. it relies on undocumented
+  fallback behaviour. `config.txt` gets `arm_64bit=0` + `kernel=kernel7.img` (whichever
+  32-bit image is installed). Not verifiable in QEMU (no VideoCore firmware there).
+- **The name really moves.** In the same QEMU machine the mainline aarch64 kernel calls
+  the card `mmcblk0` while the downstream armv7 `linux-rpi` calls it `mmcblk1`: the
+  tarball's `cmdline.txt` (`root=/dev/mmcblk0p2`) would not find root there either.
 - **pacman's sandbox under qemu-user.** `pacman -Syu` fails with `Landlock is not
   supported by the kernel`; the flash-time run uses `--disable-sandbox`.
 

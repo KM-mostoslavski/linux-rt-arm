@@ -33,13 +33,17 @@ trap cleanup EXIT
 rm -rf "${work}/${name}.boot"
 mount "${loop}p1" "${mnt}"
 # QEMU raspi4b cannot boot the stock Pi 4 device tree (see qemu_dtb.sh):
-# patch the test image's DTBs. This is the only change made to the image.
+# patch the test image's DTBs (test-only change, like the QA script below).
 for dtb in "${mnt}/bcm2711-rpi-4-b.dtb" "${mnt}/dtbs/broadcom/bcm2711-rpi-4-b.dtb"; do
   if [[ -f "${dtb}" ]]; then
     "${here}/qemu_dtb.sh" "${dtb}"
   fi
 done
 cp -r "${mnt}" "${work}/${name}.boot"
+umount "${mnt}"
+# In-guest checks for qemu_boot.py (test image only).
+mount "${loop}p2" "${mnt}"
+install -m 0755 "${here}/qa_guest.sh" "${mnt}/root/rpi4-flash-qa.sh"
 umount "${mnt}"
 losetup --detach "${loop}"
 

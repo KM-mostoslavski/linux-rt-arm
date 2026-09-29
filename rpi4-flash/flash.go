@@ -86,7 +86,7 @@ func (f *flasher) flash() (err error) {
 		{"Pinning /etc/fstab and the kernel command line to UUIDs", f.pinUUIDs},
 		{"Setting up swap", f.setupSwap},
 		{"Installing the kernel", f.installKernel},
-		{"Fixing U-Boot load addresses", f.fixBootScript},
+		{"Fixing the boot configuration", f.fixBootScript},
 		{"Flushing writes to " + f.cfg.Device, f.syncAll},
 	}
 	for _, s := range steps {
