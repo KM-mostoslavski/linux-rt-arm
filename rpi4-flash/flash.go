@@ -86,6 +86,7 @@ func (f *flasher) flash() (err error) {
 		{"Pinning /etc/fstab and the kernel command line to UUIDs", f.pinUUIDs},
 		{"Setting up swap", f.setupSwap},
 		{"Installing the kernel", f.installKernel},
+		{"Fixing U-Boot load addresses", f.fixBootScript},
 		{"Flushing writes to " + f.cfg.Device, f.syncAll},
 	}
 	for _, s := range steps {
@@ -103,6 +104,9 @@ func (f *flasher) preflight() error {
 	}
 	tools := []string{"lsblk", "wipefs", "sfdisk", "blockdev", "udevadm", "blkid",
 		"mkfs.vfat", "mkfs.ext4", "mkswap", "bsdtar", "mount", "umount", "sync"}
+	if f.cfg.Arch == "aarch64" {
+		tools = append(tools, "mkimage")
+	}
 	var missing []string
 	for _, t := range tools {
 		if _, err := lookPath(t); err != nil {
@@ -110,7 +114,7 @@ func (f *flasher) preflight() error {
 		}
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("missing tools: %s (on Arch: pacman -S util-linux dosfstools e2fsprogs libarchive systemd)",
+		return fmt.Errorf("missing tools: %s (on Arch: pacman -S util-linux dosfstools e2fsprogs libarchive systemd uboot-tools)",
 			strings.Join(missing, " "))
 	}
 	if _, err := validateTarget(f.cfg.Device); err != nil {
