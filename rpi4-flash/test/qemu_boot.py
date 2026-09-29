@@ -134,6 +134,9 @@ def stage_linux():
     # not pick it up by itself here: ask for it.
     tty = "ttyAMA1" if arch == "armv7" else "ttyAMA0"
     args += f" console={tty},115200 systemd.wants=serial-getty@{tty}.service"
+    # Emulated 32-bit boots are slow: /boot's device shows up after ~2.5 min,
+    # past systemd's default 90 s device timeout (-> emergency mode).
+    args += " systemd.default_device_timeout_sec=600"
     print(f"      kernel command line: {args}")
     extra = ["-initrd", os.path.join(bootdir, "initramfs-linux.img"), "-append", args]
     if arch == "armv7":

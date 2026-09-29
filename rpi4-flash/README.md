@@ -71,7 +71,9 @@ The fstab failure was reproduced in QEMU: the same image with the wiki's line
   initramfs at `0x02700000`, ~38 MiB after the kernel. `boot.txt` loads `Image` first, then
   the fdt and initramfs over its tail. `linux-rt-arm`'s `Image` is ~50 MiB: U-Boot stops
   with `ERROR: RD image overlaps OS image (OS=200000..3340000)`. The stock `linux-aarch64`
-  `Image` (44 MiB) is also past that limit. `boot.txt` now sets `kernel_addr_r=0x200000`,
+  7.2.8 `Image` (50.5 MB, what "latest" installs) is past that limit too: with the original
+  `boot.scr` U-Boot silently writes the fdt and initramfs over its tail; in QEMU that kernel
+  still happened to boot, so for stock this is a latent bug rather than an observed failure. `boot.txt` now sets `kernel_addr_r=0x200000`,
   `fdt_addr_r=0x8000000`, `ramdisk_addr_r=0x8100000` (126 MiB for the kernel; fits a
   1 GiB Pi).
 - **mkinitcpio autodetects the flashing PC.** `arch-chroot` bind-mounts the host's
@@ -104,17 +106,26 @@ loop device, then boots it in QEMU's `raspi4b` machine (`test/qemu_boot.py`):
    and initramfs without overlap, and the kernel must mount root through the PARTUUID U-Boot
    computed.
 2. **Linux stage**: QEMU boots the image's own kernel/initramfs/DTB with the image's
-   command line (+ a PL011 console); the test logs in on the serial console and checks
-   `/boot` mounted (vfat, by UUID), root rw, swap as in fstab, no `/dev/mmcblk` in fstab,
-   pacman keyring present, no failed systemd units.
+   command line, its `console=` arguments replaced by the PL011; the test logs in as
+   root on the serial console and runs `test/qa_guest.sh`: `/boot` mounted (vfat, by
+   UUID), root rw, active swaps match fstab, no `/dev/mmcblk` in fstab, pacman keyring
+   present, no failed systemd units.
 
-QEMU 11's `raspi4b` cannot run the stock Pi 4 device tree: `test/qemu_dtb.sh` patches the
-**test image's** DTBs only (disables the unemulated AON/HDMI block at `0x7ef00000`, PCIe,
-GENET, RNG, thermal, and turns the SDHCI QEMU wires the SD card to into a plain SD host).
-After U-Boot's hand-off, QEMU's SD controller also degrades (RCU stalls, I/O errors) while
-the same image is clean when QEMU loads the kernel directly: that is why stage 2 exists.
-None of this touches what `rpi4-flash` writes for a real Pi, but it also means a real Pi 4
-boot is the remaining unverified step.
+QEMU 11's `raspi4b` is not a complete Pi 4, so the **test image** (never what
+`rpi4-flash` writes for a Pi) is adapted:
+
+- `test/qemu_dtb.sh` patches its DTBs: disables the unemulated AON/HDMI block at
+  `0x7ef00000` (probing it aborts: L2 intc, DVP clock, HDMI i2c), PCIe/GENET/RNG/thermal
+  (QEMU only disables those in the DTB passed with `-dtb`, not the one U-Boot loads from
+  the card), turns the SDHCI QEMU wires the card to into a plain SD host, and removes the
+  Bluetooth child of the PL011 (it makes the UART a serdev: no `/dev/ttyAMA0`).
+- the image's `console=ttyS1` (mini-UART) starves QEMU's SDHCI of interrupts (`mmc0:
+  Timeout waiting for hardware interrupt`, ext4 I/O errors): U-Boot's boot therefore stops
+  at the root mount, and stage 2 replaces the consoles.
+- long lines typed on the emulated UART get lost, so `qa_guest.sh` is copied into the
+  image and only `sh /root/rpi4-flash-qa.sh` is typed.
+
+A real Pi 4 boot is therefore the remaining unverified step.
 
 Host requirements: `qemu-user-static qemu-user-static-binfmt arch-install-scripts
 dosfstools e2fsprogs libarchive uboot-tools`; `qemu-system-aarch64 dtc python` for the tests.
