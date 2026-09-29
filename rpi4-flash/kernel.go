@@ -172,7 +172,10 @@ func (f *flasher) installKernel() error {
 
 	if f.kernel.rtPkg == "" {
 		f.r.info("pacman -Syu (full upgrade, pulls the latest kernel; slow under emulation)")
-		if err := f.chroot("pacman", "-Syu", "--noconfirm"); err != nil {
+		// pacman's download sandbox (Landlock + the alpm user) fails under
+		// qemu-user: "Landlock is not supported by the kernel". Only this
+		// flash-time run skips it; the Pi's pacman.conf is left alone.
+		if err := f.chroot("pacman", "-Syu", "--noconfirm", "--disable-sandbox"); err != nil {
 			return err
 		}
 	} else {

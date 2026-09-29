@@ -25,6 +25,22 @@ for node in $(fdtget --list "${dtb}" /soc); do
   esac
 done
 
+# QEMU disables these itself, but only in the DTB given with -dtb; U-Boot
+# boots the kernel with the image's own DTB, where they are still enabled
+# (PCIe probing then aborts, like the nodes above).
+walk() {
+  local n
+  for n in $(fdtget --list "${dtb}" "$1" 2>/dev/null); do
+    local p="${1%/}/${n}"
+    case "$(fdtget "${dtb}" "${p}" compatible 2>/dev/null)" in
+      *brcm,bcm2711-pcie* | *brcm,bcm2711-rng200* | *brcm,bcm2711-thermal* | *brcm,bcm2711-genet-v5*)
+        fdtput --type s "${dtb}" "${p}" status disabled ;;
+    esac
+    walk "${p}"
+  done
+}
+walk /
+
 sdhci=/soc/mmc@7e300000
 if fdtget "${dtb}" "${sdhci}" compatible >/dev/null 2>&1; then
   for prop in non-removable mmc-pwrseq; do

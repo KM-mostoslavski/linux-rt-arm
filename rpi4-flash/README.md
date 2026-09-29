@@ -42,8 +42,11 @@ log is always in `<cache-dir>/rpi4-flash.log`.
      7.2.7 preferred, otherwise the newest with a warning). aarch64 only; armv7 falls back
      to `latest`.
    - `latest`: `pacman -Syu` (full upgrade: never a partial one).
-   Then checks that `/boot` contains the whole boot chain.
-9. sync, unmount.
+   Then rebuilds the initramfs without host autodetection (see below) and checks that
+   `/boot` contains the whole boot chain.
+9. aarch64: moves U-Boot's load addresses out of the kernel's way in `boot.txt` and
+   recompiles `boot.scr` (see below).
+10. sync, unmount.
 
 ### Where the wiki is wrong / outdated
 
@@ -57,15 +60,52 @@ log is always in `<cache-dir>/rpi4-flash.log`.
 | `pacman-key --init` on the Pi | pacman unusable until then | done while flashing (needed for the kernel step anyway) |
 | auto-mounted card | `mkfs` fails "device busy" | unmounted/swapoff'd first |
 
+The fstab failure was reproduced in QEMU: the same image with the wiki's line
+(`/dev/mmcblk1p1 /boot`) gets `Timed out waiting for device /dev/mmcblk1p1` →
+`Dependency failed for /boot` → **Emergency Mode** (the card is `mmcblk0` there); with
+`UUID=` it reaches `Multi-User System`.
+
+### Problems not in the wiki, found by booting the result
+
+- **U-Boot load addresses.** U-Boot's rpi defaults put the fdt at `0x02600000` and the
+  initramfs at `0x02700000`, ~38 MiB after the kernel. `boot.txt` loads `Image` first, then
+  the fdt and initramfs over its tail. `linux-rt-arm`'s `Image` is ~50 MiB: U-Boot stops
+  with `ERROR: RD image overlaps OS image (OS=200000..3340000)`. The stock `linux-aarch64`
+  `Image` (44 MiB) is also past that limit. `boot.txt` now sets `kernel_addr_r=0x200000`,
+  `fdt_addr_r=0x8000000`, `ramdisk_addr_r=0x8100000` (126 MiB for the kernel; fits a
+  1 GiB Pi).
+- **mkinitcpio autodetects the flashing PC.** `arch-chroot` bind-mounts the host's
+  `/sys`, so `autodetect` saw this PC's NVIDIA GPU: `nouveau.ko` + all NVIDIA firmware went
+  into the Pi's initramfs (133 MiB instead of 23). The initramfs is rebuilt with
+  `-S autodetect,kms` (host-independent); the first kernel update on the Pi regenerates it
+  with real autodetection.
+- **pacman's sandbox under qemu-user.** `pacman -Syu` fails with `Landlock is not
+  supported by the kernel`; the flash-time run uses `--disable-sandbox`.
+
 ### Testing
 
-`go test ./...` covers the fstab/cmdline rewriting. `test/e2e.sh` flashes an 8 GiB image
-through a loop device and boots it in QEMU's `raspi4b` machine (`test/qemu_boot.py`),
-logs in on the serial console and checks `/boot` is mounted, no failed units, etc.
+`go test ./...` covers the fstab/cmdline/boot.txt rewriting.
 
-QEMU does not run the VideoCore firmware, so it stands in for `start4.elf`: it loads the
-image's own `kernel8.img` (U-Boot) and `bcm2711-rpi-4-b.dtb`; everything after that
-(U-Boot, `boot.scr`, kernel, initramfs, systemd, fstab) is the image's own boot chain.
+`sudo test/matrix.sh WORKDIR` runs `test/e2e.sh` for aarch64/7.2.7/swap partition,
+aarch64/latest/swap file and armv7/latest/no swap: each flashes an 8 GiB image through a
+loop device, then boots it in QEMU's `raspi4b` machine (`test/qemu_boot.py`):
+
+1. **U-Boot stage** (aarch64): QEMU stands in for the VideoCore firmware and starts the
+   image's `kernel8.img` (U-Boot), which must run the image's `boot.scr`, load kernel, DTB
+   and initramfs without overlap, and the kernel must mount root through the PARTUUID U-Boot
+   computed.
+2. **Linux stage**: QEMU boots the image's own kernel/initramfs/DTB with the image's
+   command line (+ a PL011 console); the test logs in on the serial console and checks
+   `/boot` mounted (vfat, by UUID), root rw, swap as in fstab, no `/dev/mmcblk` in fstab,
+   pacman keyring present, no failed systemd units.
+
+QEMU 11's `raspi4b` cannot run the stock Pi 4 device tree: `test/qemu_dtb.sh` patches the
+**test image's** DTBs only (disables the unemulated AON/HDMI block at `0x7ef00000`, PCIe,
+GENET, RNG, thermal, and turns the SDHCI QEMU wires the SD card to into a plain SD host).
+After U-Boot's hand-off, QEMU's SD controller also degrades (RCU stalls, I/O errors) while
+the same image is clean when QEMU loads the kernel directly: that is why stage 2 exists.
+None of this touches what `rpi4-flash` writes for a real Pi, but it also means a real Pi 4
+boot is the remaining unverified step.
 
 Host requirements: `qemu-user-static qemu-user-static-binfmt arch-install-scripts
-dosfstools e2fsprogs libarchive`, and `qemu-system-aarch64` + `python` for the e2e test.
+dosfstools e2fsprogs libarchive uboot-tools`; `qemu-system-aarch64 dtc python` for the tests.
