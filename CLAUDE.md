@@ -1,6 +1,6 @@
 # CLAUDE.md — new-PKGBUILD-linux-rt-rpi
 
-## Current work: `rpi4-flash/` (in progress, see "Remaining work")
+## Current work: `rpi4-flash/`
 
 A Go + charmbracelet/huh tool that flashes Arch Linux ARM onto an SD card or USB disk
 for a Raspberry Pi 4. It asks exactly 4 questions (build, device, kernel, swap) and
@@ -14,44 +14,31 @@ CLAUDE.md does not apply to delivering it.
   and the traps already hit. Read it before doing anything; don't re-derive it.
 - `rpi4-flash/README.md` is the user-facing documentation.
 
-## Remaining work (updated 2026-09-30 morning)
+## Status (2026-09-30): built and tested, waiting for the user's decisions
 
-Done on 2026-09-30: code review of the flasher, with fixes committed (GPG signature check
-of the tarball, Ctrl+C/SIGTERM handling tested with real signals on a loop device, safer
-cleanup, extra preflight checks, guest checks for "boot = 1 GiB" and "swap ≤ 1 GiB").
+The e2e matrix passed 3/3 on the final code (commit 14707e7 + docs): aarch64/7.2.7/swap
+partition, aarch64/latest/swap file, armv7/latest/no swap. Logs:
+`/var/cache/rpi4-flash/e2e-logs-2026-09-30/`. The final report was given to the user the
+same day. What is left depends on their answers:
 
-1. **e2e matrix on the final code** (≈1 h). Started 2026-09-30 morning; if there is no
-   result in this session, rerun it:
-   ```sh
-   cd rpi4-flash && go build -o rpi4-flash . && go test ./... && cd ..
-   sudo rpi4-flash/test/matrix.sh <scratchpad>/e2e --cache-dir /var/cache/rpi4-flash
-   ```
-   - Start it with `run_in_background`. Wait with an until-loop on the output file; never
-     use foreground sleeps.
-   - Per-config output goes to `<scratchpad>/e2e/<arch>-<kernel>-<swap>.out`, plus
-     `.serial.log` and `.flash.log`. The files are root-owned: `sudo chown -R $USER`
-     before reading or editing them.
-   - Expected: 3× PASS. The armv7 fix (`systemd.default_device_timeout_sec=600` in
-     `test/qemu_boot.py`) had never been through a full run before this one.
-   - To stop a run: kill `matrix.sh` and `e2e.sh` by pid, then send SIGTERM to the
-     `rpi4-flash` pid (`pgrep -x rpi4-flash`); it unmounts by itself now.
-2. **If armv7 still fails**, read its `.serial.log` (the stage 2 part) before changing
-   anything. Known causes and their fixes are in the docstrings of `test/qemu_boot.py` and
-   `test/qemu_dtb.sh`.
-3. **Final report to the user.** They want to discuss the decisions only at the end.
-   Cover, briefly:
-   - the kernel-choice decision ("7.2.7" = local linux-rt-arm package via `pacman -U`,
-     "latest" = `pacman -Syu`), the alternative reading, the extra erase confirm, and that
-     the device list hides the disks holding the running system;
-   - the wiki flaws and the bugs found by booting (README, "Problems not in the wiki");
-   - findings for their PKGBUILD:
-     - no `usr/lib/modules/<ver>/pkgbase` file;
-     - ~50 MB `Image`;
-     - `8250_bcm2835aux` is a module, so the default `ttyS1` console shows no early output;
-     - the package is 7.2.8, not 7.2.7;
-   - what is unverified: booting a real Pi 4, and the armv7 `config.txt` change;
-   - ask whether to merge the decision branch into `main`. Once that's settled, delete
-     `HANDOFF.md` and this section.
+- whether the kernel-choice reading is right ("7.2.7" = local linux-rt-arm package via
+  `pacman -U`, "latest" = `pacman -Syu`), or whether they want the PKGBUILD built from
+  kernel.org sources instead;
+- whether to keep the extra erase confirmation and the hiding of system disks;
+- whether to merge `decision/kernel-rt-pkg-vs-alarm-latest` into `main`. After the merge,
+  delete `rpi4-flash/HANDOFF.md` and this section;
+- a boot on a real Pi 4 is the one thing QEMU could not verify (also the armv7
+  `config.txt` change). If the user reports a real-hardware failure, start from the serial
+  console output; `README.md` lists every change made to the stock boot files.
+
+To rerun the tests (≈1 h, run in the background, wait with an until-loop):
+```sh
+cd rpi4-flash && go build -o rpi4-flash . && go test ./... && cd ..
+sudo rpi4-flash/test/matrix.sh <scratchpad>/e2e --cache-dir /var/cache/rpi4-flash
+```
+Output files are root-owned (`sudo chown -R $USER` first). To stop a run: kill `matrix.sh`
+and `e2e.sh` by pid, then SIGTERM the `rpi4-flash` pid (`pgrep -x rpi4-flash`); it
+unmounts by itself.
 
 ## How the user wants this run
 

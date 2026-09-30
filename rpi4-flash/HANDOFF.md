@@ -67,9 +67,9 @@ embedded ALARM build key; SIGINT/SIGTERM now end through the unmount path (teste
 during extraction, SIGTERM during `pacman -U` in the chroot -> exit 130, nothing mounted,
 no temp dir, no stray process); cleanup uses `umount --recursive` and `os.Remove`;
 preflight rejects non-512-byte sectors and LUKS/LVM-stacked partitions; the guest checks
-also assert /boot = 1 GiB and swap <= 1 GiB. The matrix on this final code was started the
-same morning; CLAUDE.md "Remaining work" is the current to-do list (it supersedes the
-"Next steps" below where they differ).
+also assert /boot = 1 GiB and swap <= 1 GiB. The matrix on this final code PASSED 3/3
+(logs: /var/cache/rpi4-flash/e2e-logs-2026-09-30/). "Next steps" 1-2 below are done; what
+remains is the discussion with the user: see CLAUDE.md "Status".
 
 ## Next steps, in order
 
