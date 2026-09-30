@@ -28,7 +28,8 @@ This repository has a sibling project: an automated Raspberry Pi flashing
 script, that enables rt automatically for you.
 
 If you are interested in fast flashing of pre-configured headless Raspberry Pis
-for realtime robotics or other needs, feel free to it out at <todo: flasher url>
+for realtime robotics or other needs, feel free to check it out at
+<https://github.com/KM-mostoslavski/arch-linux-preempt-rt-rpi-flasher>
 
 ## Why you'd need this ?
 
