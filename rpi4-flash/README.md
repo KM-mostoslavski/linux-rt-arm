@@ -21,13 +21,16 @@ Every question can also be answered by a flag (`--arch --device --kernel --swap`
 which is how the end-to-end test runs it. `--verbose` streams command output; the full
 log is always in `<cache-dir>/rpi4-flash.log`.
 
+Ctrl+C (or SIGTERM) during a run stops the current command, unmounts the card and exits
+with status 130; the card is then partially written and must be flashed again.
+
 ### What it does
 
 1. Preflight, before anything is erased: root, tools, target is a whole non-system disk
    and is big enough, the kernel choice can be satisfied, qemu binfmt is available.
 2. Downloads `ArchLinuxARM-rpi-<arch>-latest.tar.gz` into `--cache-dir`
-   (`/var/cache/rpi4-flash`), verified against the published `.md5` (re-downloaded when
-   upstream changed).
+   (`/var/cache/rpi4-flash`), checked against the published `.md5` (re-downloaded when
+   upstream changed) and against its GPG signature (see below).
 3. Unmounts / swapoffs anything on the target, wipes signatures.
 4. MBR: `p1` 1 GiB FAT32 LBA (`0x0c`) `/boot`, `p2` ext4 `/`, `p3` 1 GiB swap (only
    with the swap-partition choice; root **must** stay partition 2, U-Boot's `boot.scr`
@@ -55,7 +58,7 @@ log is always in `<cache-dir>/rpi4-flash.log`.
 | `sed -i 's/mmcblk0/mmcblk1/g' root/etc/fstab` (aarch64) | The SD card name is not stable. The mainline `bcm2711-rpi-4-b.dtb` has **no `mmc0/mmc1` aliases**, so the number follows probe order; the downstream kernel calls it `mmcblk0`; from USB it is `sda`. A hard-coded name makes `/boot` fail to mount → emergency mode. | fstab uses `UUID=`; root comes from `root=PARTUUID=` (U-Boot `part uuid` on aarch64, rewritten `cmdline.txt` on armv7, which ships `root=/dev/mmcblk0p2`). |
 | interactive `fdisk` | not scriptable | `sfdisk` script, 1 MiB aligned |
 | `mkfs.vfat /dev/sdX1` | lets mkfs choose FAT12/16/32 | `mkfs.vfat -F 32` to match type `0x0c` |
-| `wget http://…tar.gz` | no integrity check | md5 checked, cached |
+| `wget http://…tar.gz` | plain HTTP, nothing checked | md5 + GPG signature checked, cached |
 | `mv root/boot/* boot` | fine, but `mv` to FAT warns on every file | `cp --no-preserve=ownership,mode` then delete |
 | `pacman-key --init` on the Pi | pacman unusable until then | done while flashing (needed for the kernel step anyway) |
 | auto-mounted card | `mkfs` fails "device busy" | unmounted/swapoff'd first |
@@ -90,6 +93,13 @@ The fstab failure was reproduced in QEMU: the same image with the wiki's line
 - **The name really moves.** In the same QEMU machine the mainline aarch64 kernel calls
   the card `mmcblk0` while the downstream armv7 `linux-rpi` calls it `mmcblk1`: the
   tarball's `cmdline.txt` (`root=/dev/mmcblk0p2`) would not find root there either.
+- **Trusting the download.** The wiki only unpacks the tarball; `rpi4-flash` also runs
+  programs from it as root on the flashing PC (pacman in an arch-chroot). The tarball is
+  served over plain HTTP and its `.md5` comes from the same host, so the detached `.sig` is
+  verified with `gpgv` against the Arch Linux ARM Build System key embedded in the binary
+  (`alarm-builder.gpg`, fingerprint `68B3537F39A313B3E574D06777193F152BDBE6A6`, as
+  published on <https://archlinuxarm.org/about/package-signing>). A failed check stops
+  the run before anything is erased.
 - **pacman's sandbox under qemu-user.** `pacman -Syu` fails with `Landlock is not
   supported by the kernel`; the flash-time run uses `--disable-sandbox`.
 
@@ -107,8 +117,8 @@ loop device, then boots it in QEMU's `raspi4b` machine (`test/qemu_boot.py`):
    computed.
 2. **Linux stage**: QEMU boots the image's own kernel/initramfs/DTB with the image's
    command line, its `console=` arguments replaced by the PL011; the test logs in as
-   root on the serial console and runs `test/qa_guest.sh`: `/boot` mounted (vfat, by
-   UUID), root rw, active swaps match fstab, no `/dev/mmcblk` in fstab, pacman keyring
+   root on the serial console and runs `test/qa_guest.sh`: `/boot` is exactly 1 GiB,
+   swap is at most 1 GiB, `/boot` mounted (vfat, by UUID), root rw, active swaps match fstab, no `/dev/mmcblk` in fstab, pacman keyring
    present, no failed systemd units.
 
 QEMU 11's `raspi4b` is not a complete Pi 4, so the **test image** (never what
@@ -128,4 +138,4 @@ QEMU 11's `raspi4b` is not a complete Pi 4, so the **test image** (never what
 A real Pi 4 boot is therefore the remaining unverified step.
 
 Host requirements: `qemu-user-static qemu-user-static-binfmt arch-install-scripts
-dosfstools e2fsprogs libarchive uboot-tools`; `qemu-system-aarch64 dtc python` for the tests.
+dosfstools e2fsprogs libarchive gnupg uboot-tools`; `qemu-system-aarch64 dtc python` for the tests.
