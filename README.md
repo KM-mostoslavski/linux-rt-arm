@@ -2,6 +2,16 @@
 
 Realtime linux kernel for armv7h and aarch64.
 
+## TODO (work in progress)
+
+This README describes where the repository is going. Not done yet:
+
+- [ ] Move the `linux-rt-arm` PKGBUILD into `./PKGBUILDs/linux-rt-arm/`. Today it is only
+      on the `wip/loop` branch, at the repository root (aarch64, Linux 7.2.8).
+- [ ] armv7h support. The PKGBUILD is aarch64-only for now.
+- [ ] `linux-rt-arm-bin` and the prebuilt kernels it installs. The web server that will
+      host them is not set up yet.
+
 ## What is it
 
 This repo has 2 PKGBUILDs and 1 installation script.
