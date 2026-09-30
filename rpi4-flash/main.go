@@ -6,12 +6,15 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/charmbracelet/huh"
@@ -37,6 +40,11 @@ func main() {
 	if err := run(&cfg, yes, verbose, includeLoop); err != nil {
 		if errors.Is(err, huh.ErrUserAborted) {
 			fmt.Fprintln(os.Stderr, "aborted, nothing was written")
+			os.Exit(130)
+		}
+		if errors.Is(err, errInterrupted) {
+			fmt.Fprintln(os.Stderr, errStyle.Render("INTERRUPTED: ")+cfg.Device+
+				" was unmounted but may be partially written; run rpi4-flash again before using it")
 			os.Exit(130)
 		}
 		fmt.Fprintln(os.Stderr, errStyle.Render("ERROR: ")+err.Error())
@@ -75,7 +83,12 @@ func run(cfg *config, yes, verbose, includeLoop bool) error {
 	if cfg.LogPath == "" {
 		cfg.LogPath = filepath.Join(cfg.CacheDir, "rpi4-flash.log")
 	}
-	r, err := newRunner(cfg.LogPath, verbose)
+	// From here on Ctrl+C / SIGTERM stop the current command and the run
+	// ends through the normal unmount path instead of dying with the card
+	// still mounted.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	defer stop()
+	r, err := newRunner(ctx, cfg.LogPath, verbose)
 	if err != nil {
 		return err
 	}

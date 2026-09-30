@@ -157,7 +157,7 @@ def stage_linux():
         out = out[out.rfind("##### stage 2"):]
         out = re.sub(r"\x1b\][^\x1b]*\x1b\\|\x1b\[[0-9;?]*[a-zA-Z]", "", out)  # OSC/CSI
         for l in out.splitlines():
-            if re.match(r"QA (PASS|FAIL|kernel|/boot|swap|fstab|failed)", l):
+            if re.match(r"QA (PASS|FAIL|kernel|/boot|swap|fstab|root|failed)", l):
                 print("   " + l[3:])
         ok = re.search(r"^QA_RESULT=0", out, re.M) is not None
         vm.send(con, "poweroff\n")

@@ -10,6 +10,10 @@ echo "QA kernel: $(uname -rv)"
 echo "QA /boot: $(findmnt -no SOURCE,FSTYPE /boot)"
 echo "QA swap: $(swapon --noheadings --show=NAME,SIZE | tr '\n' ' ')"
 echo "QA fstab: $(grep -v '^#' /etc/fstab | grep . | tr -s ' ' | tr '\n' ';')"
+echo "QA root: $(df -h --output=used,size / | tail -n 1 | tr -s ' ')"
+gib=1073741824
+ck "/boot partition is exactly 1 GiB" "test \"\$(lsblk -bno SIZE \"\$(findmnt -no SOURCE /boot)\")\" = $gib"
+ck "swap is at most 1 GiB" "test \"\$(swapon --bytes --noheadings --show=SIZE | awk '{s+=\$1} END {print s+0}')\" -le $gib"
 ck "/boot mounted (vfat, by UUID)" 'findmnt -no FSTYPE /boot | grep -qx vfat && grep -q "^UUID=.* /boot " /etc/fstab'
 ck "/boot holds the initramfs" 'test -s /boot/initramfs-linux.img'
 ck "root mounted rw" 'findmnt -no OPTIONS / | grep -q "^rw"'

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -90,8 +91,14 @@ func (f *flasher) flash() (err error) {
 		{"Flushing writes to " + f.cfg.Device, f.syncAll},
 	}
 	for _, s := range steps {
+		if f.r.ctx.Err() != nil {
+			return errInterrupted
+		}
 		f.r.step("%s", s.name)
 		if err := s.fn(); err != nil {
+			if f.r.ctx.Err() != nil {
+				return errInterrupted
+			}
 			return fmt.Errorf("%s: %w", s.name, err)
 		}
 	}
@@ -103,7 +110,7 @@ func (f *flasher) preflight() error {
 		return errors.New("must run as root (partitioning and mounting need it): sudo rpi4-flash")
 	}
 	tools := []string{"lsblk", "wipefs", "sfdisk", "blockdev", "udevadm", "blkid",
-		"mkfs.vfat", "mkfs.ext4", "mkswap", "bsdtar", "mount", "umount", "sync"}
+		"mkfs.vfat", "mkfs.ext4", "mkswap", "bsdtar", "mount", "umount", "sync", "gpgv"}
 	if f.cfg.Arch == "aarch64" {
 		tools = append(tools, "mkimage")
 	}
@@ -114,20 +121,31 @@ func (f *flasher) preflight() error {
 		}
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("missing tools: %s (on Arch: pacman -S util-linux dosfstools e2fsprogs libarchive systemd uboot-tools)",
+		return fmt.Errorf("missing tools: %s (on Arch: pacman -S util-linux dosfstools e2fsprogs libarchive systemd gnupg uboot-tools)",
 			strings.Join(missing, " "))
 	}
 	if _, err := validateTarget(f.cfg.Device); err != nil {
 		return err
 	}
+	// The partition table below is computed in 512-byte sectors.
+	ss, err := f.r.capture("blockdev", "--getss", f.cfg.Device)
+	if err != nil {
+		return err
+	}
+	if ss != strconv.Itoa(sectorSize) {
+		return fmt.Errorf("%s has %s-byte logical sectors, only %d is supported", f.cfg.Device, ss, sectorSize)
+	}
 	size, err := f.r.capture("blockdev", "--getsize64", f.cfg.Device)
 	if err != nil {
 		return err
 	}
-	n, _ := strconv.ParseUint(size, 10, 64)
+	n, err := strconv.ParseUint(size, 10, 64)
+	if err != nil {
+		return fmt.Errorf("size of %s: %w", f.cfg.Device, err)
+	}
 	need := uint64(bootSize + minRootSize)
-	if f.cfg.Swap == swapPartition {
-		need += swapSize
+	if f.cfg.Swap != swapNone {
+		need += swapSize // its own partition, or a file on the root partition
 	}
 	if n < need {
 		return fmt.Errorf("%s is %d MiB, need at least %d MiB", f.cfg.Device, n>>20, need>>20)
@@ -148,25 +166,42 @@ func (f *flasher) release() error {
 		return err
 	}
 	for _, c := range d.Children {
-		for _, m := range c.Mountpoints {
-			switch {
-			case m == "":
-			case m == "[SWAP]":
-				if err := f.r.run("", "swapoff", c.Path); err != nil {
-					return err
-				}
-			default:
-				f.r.info("unmounting %s (%s)", c.Path, m)
-				if err := f.r.run("", "umount", c.Path); err != nil {
-					return err
-				}
-			}
+		// A partition with something stacked on it (LUKS, LVM) stays busy
+		// even once unmounted, and sfdisk could not re-read the table.
+		if len(c.Children) > 0 {
+			return fmt.Errorf("%s is in use by %s (LUKS/LVM?): close it first", c.Path, c.Children[0].Path)
+		}
+		if err := f.releaseDev(c); err != nil {
+			return err
 		}
 		// Old partition signatures would otherwise make udev/blkid
 		// report stale filesystems on the new partitions.
 		_ = f.r.run("", "wipefs", "--all", "--force", c.Path)
 	}
+	// A disk can also carry a filesystem directly, without partitions.
+	if err := f.releaseDev(d); err != nil {
+		return err
+	}
 	return f.r.run("", "wipefs", "--all", "--force", f.cfg.Device)
+}
+
+// releaseDev unmounts / swapoffs one block device, once per mountpoint.
+func (f *flasher) releaseDev(d blockDev) error {
+	for _, m := range d.Mountpoints {
+		switch m {
+		case "":
+		case "[SWAP]":
+			if err := f.r.run("", "swapoff", d.Path); err != nil {
+				return err
+			}
+		default:
+			f.r.info("unmounting %s (%s)", d.Path, m)
+			if err := f.r.run("", "umount", m); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (f *flasher) partition() error {
@@ -404,7 +439,9 @@ func (f *flasher) unmountLast() error {
 	mp := f.mounted[n-1]
 	var err error
 	for i := 0; i < 5; i++ {
-		if err = f.r.run("", "umount", mp); err == nil {
+		// --recursive: an interrupted arch-chroot can leave /proc, /sys,
+		// /dev... mounted below the rootfs.
+		if err = f.r.run("", "umount", "--recursive", mp); err == nil {
 			f.mounted = f.mounted[:n-1]
 			return nil
 		}
@@ -414,14 +451,23 @@ func (f *flasher) unmountLast() error {
 }
 
 func (f *flasher) cleanup() error {
+	// Unmounting must also happen after an interruption (cancelled context).
+	f.r.ctx = context.Background()
 	f.r.step("Unmounting")
 	for len(f.mounted) > 0 {
 		if err := f.unmountLast(); err != nil {
 			return fmt.Errorf("%w (unmount %s by hand before removing the card)", err, f.mounted[len(f.mounted)-1])
 		}
 	}
-	if f.work != "" {
-		return os.RemoveAll(f.work)
+	if f.work == "" {
+		return nil
+	}
+	// os.Remove, never RemoveAll: should anything still be mounted below
+	// f.work, a recursive delete would erase what was just written.
+	for _, d := range []string{filepath.Join(f.work, "boot"), filepath.Join(f.work, "root"), f.work} {
+		if err := os.Remove(d); err != nil && !os.IsNotExist(err) {
+			return err
+		}
 	}
 	return nil
 }
