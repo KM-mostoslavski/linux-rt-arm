@@ -1,6 +1,6 @@
 # CLAUDE.md — new-PKGBUILD-linux-rt-rpi
 
-## Current work: `rpi4-flash/` (paused 2026-09-29 16:25, resume next session)
+## Current work: `rpi4-flash/` (in progress, see "Remaining work")
 
 A Go + charmbracelet/huh tool that flashes Arch Linux ARM onto an SD card or USB disk
 for a Raspberry Pi 4. It asks exactly 4 questions (build, device, kernel, swap) and
@@ -14,10 +14,14 @@ CLAUDE.md does not apply to delivering it.
   and the traps already hit. Read it before doing anything; don't re-derive it.
 - `rpi4-flash/README.md` is the user-facing documentation.
 
-## Tomorrow, in order
+## Remaining work (updated 2026-09-30 morning)
 
-1. **Rerun the e2e matrix** (≈1 h). The armv7 test fix (`systemd.default_device_timeout_sec=600`
-   in `test/qemu_boot.py`) has not been through a full run yet. Expected result: 3× PASS.
+Done on 2026-09-30: code review of the flasher, with fixes committed (GPG signature check
+of the tarball, Ctrl+C/SIGTERM handling tested with real signals on a loop device, safer
+cleanup, extra preflight checks, guest checks for "boot = 1 GiB" and "swap ≤ 1 GiB").
+
+1. **e2e matrix on the final code** (≈1 h). Started 2026-09-30 morning; if there is no
+   result in this session, rerun it:
    ```sh
    cd rpi4-flash && go build -o rpi4-flash . && go test ./... && cd ..
    sudo rpi4-flash/test/matrix.sh <scratchpad>/e2e --cache-dir /var/cache/rpi4-flash
@@ -27,18 +31,18 @@ CLAUDE.md does not apply to delivering it.
    - Per-config output goes to `<scratchpad>/e2e/<arch>-<kernel>-<swap>.out`, plus
      `.serial.log` and `.flash.log`. The files are root-owned: `sudo chown -R $USER`
      before reading or editing them.
-   - Yesterday's logs for comparison: `/var/cache/rpi4-flash/e2e-logs-2026-09-29/`.
+   - Expected: 3× PASS. The armv7 fix (`systemd.default_device_timeout_sec=600` in
+     `test/qemu_boot.py`) had never been through a full run before this one.
+   - To stop a run: kill `matrix.sh` and `e2e.sh` by pid, then send SIGTERM to the
+     `rpi4-flash` pid (`pgrep -x rpi4-flash`); it unmounts by itself now.
 2. **If armv7 still fails**, read its `.serial.log` (the stage 2 part) before changing
    anything. Known causes and their fixes are in the docstrings of `test/qemu_boot.py` and
-   `test/qemu_dtb.sh`. If it's a real problem, fix it; if it's a new decision, put it on its
-   own branch (see "How the user wants this run" below).
-3. **Optional review** of `flash.go` for error, cleanup and unmount paths (`os.RemoveAll`
-   must never run while something is still mounted) and of device validation. Nothing is
-   known broken.
-4. **Final report to the user.** They want to discuss the decisions only at the end.
+   `test/qemu_dtb.sh`.
+3. **Final report to the user.** They want to discuss the decisions only at the end.
    Cover, briefly:
    - the kernel-choice decision ("7.2.7" = local linux-rt-arm package via `pacman -U`,
-     "latest" = `pacman -Syu`), the alternative reading, and the extra erase confirm;
+     "latest" = `pacman -Syu`), the alternative reading, the extra erase confirm, and that
+     the device list hides the disks holding the running system;
    - the wiki flaws and the bugs found by booting (README, "Problems not in the wiki");
    - findings for their PKGBUILD:
      - no `usr/lib/modules/<ver>/pkgbase` file;

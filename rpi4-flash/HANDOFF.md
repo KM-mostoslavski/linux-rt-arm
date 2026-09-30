@@ -60,6 +60,17 @@ Verified (QEMU raspi4b, full matrix at 15:xx, logs in
   there: /dev/sda is the user's real USB card reader.
 - go test ./... passes (fstab, cmdline, boot.txt, config.txt rewriting).
 
+## Update 2026-09-30
+
+Review done and committed (ee72950): tarball GPG signature verified with gpgv against the
+embedded ALARM build key; SIGINT/SIGTERM now end through the unmount path (tested: SIGINT
+during extraction, SIGTERM during `pacman -U` in the chroot -> exit 130, nothing mounted,
+no temp dir, no stray process); cleanup uses `umount --recursive` and `os.Remove`;
+preflight rejects non-512-byte sectors and LUKS/LVM-stacked partitions; the guest checks
+also assert /boot = 1 GiB and swap <= 1 GiB. The matrix on this final code was started the
+same morning; CLAUDE.md "Remaining work" is the current to-do list (it supersedes the
+"Next steps" below where they differ).
+
 ## Next steps, in order
 
 1. Rerun the matrix (expect 3x PASS, ~1 h):
