@@ -6,7 +6,8 @@
 # qemu-user (binfmt); the chroot lives in an unprivileged user namespace
 # (unshare --map-auto), so no root on the host.
 #
-# Output: work/native/pkgdest/*.pkg.tar.zst, log work/logs/native-<ts>.log
+# Env: REF=<git ref> (default HEAD), JOBS=<n> (default nproc)
+# Output: work/native/pkgdest/*.pkg.tar.xz, log work/logs/native-<ts>.log
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
 
@@ -19,10 +20,10 @@ log "native validation -> $logf"
 
 # package sources exactly as they would be published (tracked files only)
 mkdir -p "$nat/pkgsrc"
-git -C "$REPO" archive HEAD | tar -x -C "$nat/pkgsrc"
+git -C "$REPO" archive "${REF:-HEAD}" | tar -x -C "$nat/pkgsrc"
 
 unshare --map-auto --map-root-user --mount --pid --fork \
-  env NAT="$nat" TARBALL="$ROOTFS_TARBALL" SRCTAR="$WORK/srcdest" JOBS="$(nproc)" \
+  env NAT="$nat" TARBALL="$ROOTFS_TARBALL" SRCTAR="$WORK/srcdest" JOBS="${JOBS:-$(nproc)}" \
   bash -euo pipefail <<'NS' 2>&1 | tee "$logf"
 R=$NAT/root; mkdir -p "$R"
 bsdtar -xpf "$TARBALL" -C "$R"

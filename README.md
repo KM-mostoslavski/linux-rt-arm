@@ -303,6 +303,10 @@ These are the problems we actually hit:
   - `native-validate.sh`: unmodified native aarch64 `makepkg` in a clean
     ALARM chroot through qemu-user.
 
+**Pre-built release packages** for a fileserver are built with
+`harness/prebuild.sh` (native build, checks, output in
+`out/<pkgver>-<pkgrel>/`). See [docs/PREBUILD.md](docs/PREBUILD.md).
+
 ## License
 
 Packaging files: MIT (see `LICENSE`). The Linux kernel is GPL-2.0-only.

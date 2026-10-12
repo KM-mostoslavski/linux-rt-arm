@@ -24,3 +24,6 @@
 
 # local statement of work for Claude (not published)
 /CLAUDE.md
+
+# pre-built release packages (harness/prebuild.sh)
+/out/
